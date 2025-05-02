@@ -1,0 +1,230 @@
+from rest_framework import status
+from .models import Report, EmergencyReport, MissingReport
+from users.models import User
+from .serializers import EmergencyReportCreateSerializer, MissingReportCreateSerializer
+from global_services.firebase.notifications import send_fcm_notification
+from django.shortcuts import get_object_or_404
+from .serializers import ReportListSerializer
+from users.permissions import IsAdmin, IsEmergency, IsPilgrim
+from rest_framework.generics import ListAPIView
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from collections import defaultdict
+from .serializers import ReporterGroupedReportsSerializer
+
+
+class CreateEmergencyReportView(APIView):
+    permission_classes = [IsAuthenticated, IsPilgrim]
+
+    def post(self, request):
+        serializer = EmergencyReportCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            report = Report.objects.create(report_type='EMERGENCY')
+            EmergencyReport.objects.create(
+                report=report,
+                pilgrim=request.user,
+                report_reason=serializer.validated_data['report_reason'],
+                location=serializer.validated_data['location']
+            )
+
+            recipients = User.objects.filter(account_type__in=['emergency', 'admin']).exclude(fcm_token=None)
+            tokens = [user.fcm_token for user in recipients if user.fcm_token]
+            responce = send_fcm_notification(
+                    tokens=tokens,
+                    title="New Emergency Report",
+                    body=serializer.validated_data['report_reason']
+                    )
+            # for user in emergency_users:
+            #     send_fcm_notification(
+            #         tokens=user.fcm_token,
+            #         title="بلاغ طارئ جديد",
+            #         body=serializer.validated_data['report_reason']
+            #     )
+
+            return Response({"message": "Emergency report sent successfully."}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CreateMissingReportView(APIView):
+    def post(self, request):
+        serializer = MissingReportCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            report = Report.objects.create(report_type='MISSING')
+            MissingReport.objects.create(
+                report=report,
+                reported_by=request.user,
+                missing_name=serializer.validated_data.get('missing_name'),
+                missing_health_id=serializer.validated_data.get('missing_health_id'),
+                description=serializer.validated_data['description'],
+                last_seen_location=serializer.validated_data['last_seen_location'],
+                contact_number=serializer.validated_data.get('contact_number'),
+                photo=serializer.validated_data.get('photo')
+            )
+
+            recipients = User.objects.filter(account_type__in=['emergency', 'admin']).exclude(fcm_token=None)
+            tokens = [user.fcm_token for user in recipients if user.fcm_token]
+            responce = send_fcm_notification(
+                tokens=tokens,
+                title="New Missing Report",
+                body=serializer.validated_data['description']
+            )
+            # for user in emergency_users:
+            #     send_fcm_notification(
+            #         token=user.fcm_token,
+            #         title="بلاغ مفقود جديد",
+            #         body=serializer.validated_data['description']
+            #     )
+
+            return Response({"message": "Missing report sent successfully."}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class ReportListView(ListAPIView):
+    queryset = Report.objects.all().order_by('-created_at').prefetch_related('emergency_details__pilgrim', 'missing_details')
+    serializer_class = ReportListSerializer
+    pagination_class = StandardResultsSetPagination
+    permission_classes = [IsAuthenticated]
+
+
+class GroupedReportsByReporterView(APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        reports = Report.objects.all().select_related(
+            'emergency_details__pilgrim',
+            'missing_details__reported_by'
+        )
+
+        print(reports)
+        grouped = defaultdict(list)
+
+        for report in reports:
+            if report.report_type == 'EMERGENCY' and hasattr(report, 'emergency_details'):
+                user = report.emergency_details.pilgrim
+            elif report.report_type == 'MISSING' and hasattr(report, 'missing_details') and report.missing_details.reported_by:
+                user = report.missing_details.reported_by
+            else:
+                continue
+
+            grouped[(user.id, user.get_full_name())].append(report)
+        response_data = []
+        for (user_id, user_name), report_list in grouped.items():
+            sorted_reports = sorted(report_list, key=lambda r: r.created_at, reverse=True)
+            response_data.append({
+                "reporter_id": user_id,
+                "reporter_name": user_name,
+                "reports": sorted_reports
+            })
+
+        final_serializer = ReporterGroupedReportsSerializer(response_data, many=True)
+        return Response(final_serializer.data)
+
+
+class ReportDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsEmergency | IsAdmin]
+
+    def post(self, request):
+        report_id = request.data.get('report_id')
+        report = get_object_or_404(Report, id=report_id)
+        data = {
+            'id': report.id,
+            'type': report.report_type,
+            'status': report.status,
+            'created_at': report.created_at
+        }
+
+        if report.report_type == 'EMERGENCY' and hasattr(report, 'emergency_details'):
+            er = report.emergency_details
+            data.update({
+                'report_reason': er.report_reason,
+                'location': er.location,
+                'pilgrim': {
+                    'id': er.pilgrim.id,
+                    'name': er.pilgrim.get_full_name()
+                }
+            })
+        elif report.report_type == 'MISSING' and hasattr(report, 'missing_details'):
+            mr = report.missing_details
+            data.update({
+                'missing_name': mr.missing_name,
+                'health_id': mr.missing_health_id,
+                'description': mr.description,
+                'last_seen_location': mr.last_seen_location,
+                'contact_number': mr.contact_number,
+                'photo_url': mr.photo.url if mr.photo else None,
+                'reported_by': {
+                    'id': mr.reported_by.id if mr.reported_by else None,
+                    'name': mr.reported_by.get_full_name() if mr.reported_by else None
+                }
+            })
+
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class UpdateReportStatusView(APIView):
+    permission_classes = [IsAuthenticated, IsEmergency]
+
+    def patch(self, request):
+        new_status = request.data.get("status")
+        valid_statuses = ['NEW', 'IN_PROGRESS', 'RESOLVED']
+
+        if new_status not in valid_statuses:
+            return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            report_id = request.data.get("report_id")
+            report = Report.objects.get(id=report_id)
+        except Report.DoesNotExist:
+            return Response({"error": "Report not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        report.status = new_status
+        report.save()
+
+        return Response({
+            "message": "Report status updated successfully.",
+            "report_id": report.id,
+            "new_status": report.status
+        }, status=status.HTTP_200_OK)
+
+
+class ListPilgrimsWithStatusView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        pilgrims = User.objects.filter(account_type='pilgrim', is_active=True)
+        data = []
+
+        for pilgrim in pilgrims:
+            status_info = {"status": "safe"}
+
+            unresolved_emergency = EmergencyReport.objects.filter(
+                pilgrim=pilgrim,
+                report__status='IN_PROGRESS'
+            ).first()
+
+            if unresolved_emergency:
+                status_info = {
+                    "status": unresolved_emergency.report_reason
+                }
+            else:
+                missing_report = MissingReport.objects.filter(
+                    missing_name__iexact=pilgrim.get_full_name()
+                ).first()
+                if missing_report:
+                    status_info = {"status": "missing"}
+
+            data.append({
+                "id": pilgrim.id,
+                "full_name": pilgrim.get_full_name(),
+                **status_info
+            })
+
+        return Response(data, status=status.HTTP_200_OK)
