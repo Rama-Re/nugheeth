@@ -31,11 +31,12 @@ class CreateEmergencyReportView(APIView):
 
             recipients = User.objects.filter(account_type__in=['emergency', 'admin']).exclude(fcm_token=None)
             tokens = [user.fcm_token for user in recipients if user.fcm_token]
-            responce = send_fcm_notification(
-                    tokens=tokens,
-                    title="New Emergency Report",
-                    body=serializer.validated_data['report_reason']
-                    )
+            send_fcm_notification(
+                tokens=tokens,
+                title=f"🚨 بلاغ طارئ من {request.user.get_full_name()}",
+                body=f"السبب: {serializer.validated_data['report_reason']}"
+            )
+
             # for user in emergency_users:
             #     send_fcm_notification(
             #         tokens=user.fcm_token,
@@ -88,7 +89,8 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 
 class ReportListView(ListAPIView):
-    queryset = Report.objects.all().order_by('-created_at').prefetch_related('emergency_details__pilgrim', 'missing_details')
+    queryset = Report.objects.all().order_by('-created_at').prefetch_related('emergency_details__pilgrim',
+                                                                             'missing_details')
     serializer_class = ReportListSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes = [IsAuthenticated]
@@ -103,29 +105,41 @@ class GroupedReportsByReporterView(APIView):
             'missing_details__reported_by'
         )
 
-        print(reports)
         grouped = defaultdict(list)
 
         for report in reports:
             if report.report_type == 'EMERGENCY' and hasattr(report, 'emergency_details'):
                 user = report.emergency_details.pilgrim
-            elif report.report_type == 'MISSING' and hasattr(report, 'missing_details') and report.missing_details.reported_by:
+                name = user.get_full_name()
+                location = report.emergency_details.location
+            elif report.report_type == 'MISSING' and hasattr(report,
+                                                             'missing_details') and report.missing_details.reported_by:
                 user = report.missing_details.reported_by
+                name = report.missing_details.missing_name
+                location = report.missing_details.last_seen_location
             else:
                 continue
 
-            grouped[(user.id, user.get_full_name())].append(report)
+            grouped[(user.id, user.get_full_name())].append({
+                "id": report.id,
+                "type": report.report_type,
+                "status": report.status,
+                "name": name,
+                "created_at": report.created_at.isoformat(),
+                "location": location
+            })
         response_data = []
         for (user_id, user_name), report_list in grouped.items():
-            sorted_reports = sorted(report_list, key=lambda r: r.created_at, reverse=True)
+            sorted_reports = sorted(report_list, key=lambda r: r['created_at'], reverse=True)
+            print(sorted_reports)
             response_data.append({
                 "reporter_id": user_id,
                 "reporter_name": user_name,
                 "reports": sorted_reports
             })
 
-        final_serializer = ReporterGroupedReportsSerializer(response_data, many=True)
-        return Response(final_serializer.data)
+        # final_serializer = ReporterGroupedReportsSerializer(response_data, many=True)
+        return Response(response_data)
 
 
 class ReportDetailView(APIView):
@@ -207,12 +221,12 @@ class ListPilgrimsWithStatusView(APIView):
 
             unresolved_emergency = EmergencyReport.objects.filter(
                 pilgrim=pilgrim,
-                report__status='IN_PROGRESS'
+                report__status__in=['NEW', 'IN_PROGRESS']
             ).first()
 
             if unresolved_emergency:
                 status_info = {
-                    "status": unresolved_emergency.report_reason
+                    "status": unresolved_emergency.report.report_type
                 }
             else:
                 missing_report = MissingReport.objects.filter(
@@ -228,3 +242,67 @@ class ListPilgrimsWithStatusView(APIView):
             })
 
         return Response(data, status=status.HTTP_200_OK)
+
+
+class MyReportsView(APIView):
+    permission_classes = [IsAuthenticated, IsPilgrim]
+
+    def get(self, request):
+        user = request.user
+
+        emergency_reports = EmergencyReport.objects.filter(pilgrim=user).select_related('report')
+        missing_reports = MissingReport.objects.filter(reported_by=user).select_related('report')
+
+        combined = []
+
+        for er in emergency_reports:
+            combined.append({
+                "id": er.report.id,
+                "type": "EMERGENCY",
+                "status": er.report.status,
+                "created_at": er.report.created_at,
+                "location": er.location,
+                "reason": er.report_reason,
+            })
+
+        for mr in missing_reports:
+            combined.append({
+                "id": mr.report.id,
+                "type": "MISSING",
+                "status": mr.report.status,
+                "created_at": mr.report.created_at,
+                "missing_name": mr.missing_name,
+                "last_seen_location": mr.last_seen_location,
+                "description": mr.description,
+            })
+
+        # ترتيب حسب الأحدث
+        combined.sort(key=lambda x: x["created_at"], reverse=True)
+
+        return Response(combined, status=status.HTTP_200_OK)
+
+
+class SendMessageNotificationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        recipient_id = request.data.get('recipient_id')
+        title = request.data.get('title', 'رسالة جديدة')
+        body = request.data.get('body', '')
+
+        if not recipient_id or not body:
+            return Response({"error": "الرجاء تحديد المستلم ومحتوى الرسالة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipient = get_object_or_404(User, id=recipient_id)
+
+        if not recipient.fcm_token:
+            return Response({"error": "لا يوجد FCM Token لهذا المستخدم."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # إرسال الإشعار
+        send_fcm_notification(
+            tokens=[recipient.fcm_token],
+            title=title,
+            body=body
+        )
+
+        return Response({"message": "تم إرسال الإشعار بنجاح."}, status=status.HTTP_200_OK)

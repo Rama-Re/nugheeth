@@ -2,7 +2,8 @@ from rest_framework.generics import ListAPIView
 
 from global_services.firebase.notifications import send_fcm_notification
 from .permissions import IsAdmin, IsPilgrim
-from .serializers import PilgrimProfileSerializer, EmergencyProfileSerializer, FamilyProfileSerializer, NormalProfileSerializer, UserSerializer
+from .serializers import PilgrimProfileSerializer, EmergencyProfileSerializer, FamilyProfileSerializer, \
+    NormalProfileSerializer, UserSerializer
 from rest_framework.views import APIView
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -48,8 +49,10 @@ class RegisterUserView(generics.CreateAPIView):
             )
 
         elif account_type == "family":
-            pilgrim_phone = self.request.data.get('pilgrim_phone')
-            pilgrim = get_object_or_404(User, phone_number=pilgrim_phone, account_type="pilgrim")
+            id_or_pass_number = self.request.data.get('id_or_pass_number')
+            pilgrim_profile = get_object_or_404(PilgrimProfile, id_or_pass_number=id_or_pass_number)
+            pilgrim = pilgrim_profile.user
+
             FamilyProfile.objects.create(user=user, pilgrim=pilgrim)
         elif account_type == "normal":
             NormalProfile.objects.create(user=user)
@@ -111,15 +114,18 @@ class LoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
-        user = authenticate(request, email=email, password=password)
-        if not user:
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return error_response("Invalid email or password.", 401)
+
+        if not user.check_password(password):
             return error_response("Invalid email or password.", 401)
         if not user.is_active:
             return error_response("Account is not activated.", 403)
 
         if user.account_type == "emergency" and not user.emergency_profile.is_active:
             return error_response("Your account is pending admin approval.", 403)
-
 
         fcm_token = request.data.get("fcm_token")
         if fcm_token:
@@ -347,3 +353,34 @@ class ListPilgrimsView(APIView):
         pilgrims = User.objects.filter(account_type='pilgrim', is_active=True)
         data = [{"id": pilgrim.id, "full_name": pilgrim.get_full_name()} for pilgrim in pilgrims]
         return Response(data, status=status.HTTP_200_OK)
+
+
+class GetSupervisorView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        supervisor = User.objects.filter(is_superuser=True).first()
+        if not supervisor:
+            return Response({"detail": "No supervisor found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "id": supervisor.id,
+            "full_name": supervisor.get_full_name(),
+            "email": supervisor.email
+        }, status=status.HTTP_200_OK)
+
+
+class GetLinkedPilgrimView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        family_profile = getattr(request.user, 'family_profile', None)
+        if not family_profile:
+            return Response({"error": "No family profile found"}, status=404)
+
+        pilgrim = family_profile.pilgrim
+        return Response({
+            "pilgrim_id": pilgrim.id,
+            "full_name": pilgrim.get_full_name(),
+            "email": pilgrim.email
+        }, status=200)

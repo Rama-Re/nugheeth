@@ -20,12 +20,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = ''
+SECRET_KEY = 'django-insecure-osk#-%6h4-r=kpco!pcx$*x0*vufnnyp%k8yzldq!=d!#i!o*2'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -48,7 +48,8 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
 
-    'EXCEPTION_HANDLER': 'global_services.exceptions.custom_exception_handler'
+    'EXCEPTION_HANDLER': 'global_services.exceptions.custom_exception_handler',
+    'UNICODE_JSON': True,
 
 }
 

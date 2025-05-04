@@ -6,7 +6,7 @@ from .views import (
     GroupedReportsByReporterView,
     ReportDetailView,
     UpdateReportStatusView,
-    ListPilgrimsWithStatusView,
+    ListPilgrimsWithStatusView, SendMessageNotificationView, MyReportsView,
 )
 
 urlpatterns = [
@@ -19,6 +19,8 @@ urlpatterns = [
     path('report/detail/', ReportDetailView.as_view(), name='report-detail'),
 
     path('report/edit-status/', UpdateReportStatusView.as_view(), name='update-report-status'),
+    path('reports/pilgrim-report/', MyReportsView.as_view(), name='get-pilgrim-report'),
+    path('notify-user/', SendMessageNotificationView.as_view(), name='notify-user'),
 
     # قائمة الحجاج وحالاتهم (آمن / بلاغ طارئ / مفقود)
     path('pilgrims/status/', ListPilgrimsWithStatusView.as_view(), name='pilgrims-status'),
