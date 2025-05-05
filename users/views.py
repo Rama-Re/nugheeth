@@ -23,39 +23,60 @@ class RegisterUserView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
+        account_type = request.data.get('account_type')
+        id_or_pass_number = request.data.get('id_or_pass_number')
+
+        if account_type == "family":
+            pilgrim_profile = PilgrimProfile.objects.filter(id_or_pass_number=id_or_pass_number).first()
+            if not pilgrim_profile:
+                return  Response(
+                    {"error": "No pilgrim found with the provided ID or passport number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if FamilyProfile.objects.filter(pilgrim=pilgrim_profile.user).exists():
+                return Response(
+                    {"error": "A family account is already linked to this pilgrim."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         user = serializer.save(is_active=False)
 
-        create_and_send_verification(user, "activation",
-                                     "Email Verification Code", "Your verification code is: {code}")
+        create_and_send_verification(
+            user, "activation",
+            "رمز تفعيل الحساب", "رمز التفعيل الخاص بك هو: {code}"
+        )
 
-        account_type = user.account_type
         if account_type == "pilgrim":
             PilgrimProfile.objects.create(
                 user=user,
-                health_id=self.request.data.get('health_id', ''),
-                medical_info=self.request.data.get('medical_info', ''),
-                id_or_pass_number=self.request.data.get('id_or_pass_number', '')
+                health_id=request.data.get('health_id', ''),
+                medical_info=request.data.get('medical_info', ''),
+                id_or_pass_number=id_or_pass_number or ''
             )
+
         elif account_type == "emergency":
             EmergencyProfile.objects.create(user=user)
-
             recipients = User.objects.filter(account_type='admin').exclude(fcm_token=None)
-            tokens = [user.fcm_token for user in recipients if user.fcm_token]
-            responce = send_fcm_notification(
+            tokens = [u.fcm_token for u in recipients if u.fcm_token]
+            send_fcm_notification(
                 tokens=tokens,
                 title="New Emergency Account",
                 body="Request to activate emergency account"
             )
 
         elif account_type == "family":
-            id_or_pass_number = self.request.data.get('id_or_pass_number')
-            pilgrim_profile = get_object_or_404(PilgrimProfile, id_or_pass_number=id_or_pass_number)
-            pilgrim = pilgrim_profile.user
+            FamilyProfile.objects.create(user=user, pilgrim=pilgrim_profile.user)
 
-            FamilyProfile.objects.create(user=user, pilgrim=pilgrim)
         elif account_type == "normal":
             NormalProfile.objects.create(user=user)
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class ActivateAccountView(APIView):
@@ -384,3 +405,11 @@ class GetLinkedPilgrimView(APIView):
             "full_name": pilgrim.get_full_name(),
             "email": pilgrim.email
         }, status=200)
+
+
+class InactiveEmergencyProfilesView(ListAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = UserSerializer
+
+    def get_queryset(self):
+        return User.objects.filter(account_type='emergency', is_active=False)

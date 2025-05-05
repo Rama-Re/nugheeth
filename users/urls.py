@@ -11,7 +11,7 @@ from .views import (
     SendLoginCodeView,
     LoginWithCodeView,
     ManageUserView,
-    ListPilgrimsView, GetSupervisorView, GetLinkedPilgrimView,
+    ListPilgrimsView, GetSupervisorView, GetLinkedPilgrimView, InactiveEmergencyProfilesView,
 )
 
 
@@ -30,5 +30,6 @@ urlpatterns = [
     path('emergency/activate/', ActivateEmergencyProfileView.as_view(), name='activate-emergency'),
     path('get-supervisor/', GetSupervisorView.as_view()),
     path('linked-pilgrim/', GetLinkedPilgrimView.as_view()),
+    path('emergency-profiles/inactive/', InactiveEmergencyProfilesView.as_view(), name='inactive_emergency_profiles'),
 
 ]

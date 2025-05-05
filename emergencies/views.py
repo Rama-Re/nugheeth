@@ -162,11 +162,12 @@ class ReportDetailView(APIView):
                 'location': er.location,
                 'pilgrim': {
                     'id': er.pilgrim.id,
-                    'name': er.pilgrim.get_full_name()
+                    'name': er.pilgrim.get_full_name(),
                 }
             })
         elif report.report_type == 'MISSING' and hasattr(report, 'missing_details'):
             mr = report.missing_details
+
             data.update({
                 'missing_name': mr.missing_name,
                 'health_id': mr.missing_health_id,
@@ -208,16 +209,18 @@ class UpdateReportStatusView(APIView):
             "new_status": report.status
         }, status=status.HTTP_200_OK)
 
-
 class ListPilgrimsWithStatusView(APIView):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsAdmin | IsEmergency]
 
     def get(self, request):
         pilgrims = User.objects.filter(account_type='pilgrim', is_active=True)
         data = []
 
         for pilgrim in pilgrims:
-            status_info = {"status": "safe"}
+            status_info = {
+                "status": "safe",
+                "report_status": "RESOLVED"
+            }
 
             unresolved_emergency = EmergencyReport.objects.filter(
                 pilgrim=pilgrim,
@@ -226,14 +229,19 @@ class ListPilgrimsWithStatusView(APIView):
 
             if unresolved_emergency:
                 status_info = {
-                    "status": unresolved_emergency.report.report_type
+                    "status": "EMERGENCY",
+                    "report_status": unresolved_emergency.report.status
                 }
             else:
                 missing_report = MissingReport.objects.filter(
-                    missing_name__iexact=pilgrim.get_full_name()
+                    missing_name__iexact=pilgrim.get_full_name(),
+                    report__status__in=['NEW', 'IN_PROGRESS']
                 ).first()
                 if missing_report:
-                    status_info = {"status": "missing"}
+                    status_info = {
+                        "status": "MISSING",
+                        "report_status": missing_report.report.status
+                    }
 
             data.append({
                 "id": pilgrim.id,
