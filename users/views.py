@@ -41,7 +41,6 @@ class RegisterUserView(generics.CreateAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save(is_active=False)

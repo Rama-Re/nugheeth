@@ -166,7 +166,6 @@ import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-
 # firebase.py
 # import os
 # from firebase_admin import credentials, initialize_app

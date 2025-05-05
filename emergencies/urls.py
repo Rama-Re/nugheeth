@@ -6,7 +6,10 @@ from .views import (
     GroupedReportsByReporterView,
     ReportDetailView,
     UpdateReportStatusView,
-    ListPilgrimsWithStatusView, SendMessageNotificationView, MyReportsView,
+    ListPilgrimsWithStatusView,
+    SendMessageNotificationView,
+    MyReportsView,
+    DirectionsAPIView,
 )
 
 urlpatterns = [
@@ -22,6 +25,7 @@ urlpatterns = [
     path('reports/pilgrim-report/', MyReportsView.as_view(), name='get-pilgrim-report'),
     path('notify-user/', SendMessageNotificationView.as_view(), name='notify-user'),
 
-    # قائمة الحجاج وحالاتهم (آمن / بلاغ طارئ / مفقود)
     path('pilgrims/status/', ListPilgrimsWithStatusView.as_view(), name='pilgrims-status'),
+
+    path('maps/directions/', DirectionsAPIView.as_view(), name='directions'),
 ]

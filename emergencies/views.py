@@ -10,9 +10,9 @@ from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from collections import defaultdict
-from .serializers import ReporterGroupedReportsSerializer
+import requests
 
 
 class CreateEmergencyReportView(APIView):
@@ -314,3 +314,36 @@ class SendMessageNotificationView(APIView):
         )
 
         return Response({"message": "تم إرسال الإشعار بنجاح."}, status=status.HTTP_200_OK)
+
+
+class DirectionsAPIView(APIView):
+    permission_classes = [AllowAny]  # يمكن تعديل الصلاحيات لاحقًا
+
+    def post(self, request):
+        origin = request.data.get('origin')
+        destination = request.data.get('destination')
+        api_key = 'AIzaSyDkPh8vuUbdAuQCSf971rWxQ_uTxvi2pqc'
+
+        if not origin or not destination:
+            return Response(
+                {"error": "Both 'origin' and 'destination' are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        url = (
+            'https://maps.googleapis.com/maps/api/directions/json'
+            f'?origin={origin}&destination={destination}'
+            f'&key={api_key}&overview=full&mode=driving&language=ar'
+        )
+
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            return Response(
+                {"error": "Failed to fetch directions", "details": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        return Response(data, content_type='application/json; charset=utf-8')
