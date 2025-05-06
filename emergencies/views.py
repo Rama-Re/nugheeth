@@ -3,6 +3,7 @@ from .models import Report, EmergencyReport, MissingReport
 from users.models import User
 from .serializers import EmergencyReportCreateSerializer, MissingReportCreateSerializer
 from global_services.firebase.notifications import send_fcm_notification
+from global_services.googleMap.directions import get_directions
 from django.shortcuts import get_object_or_404
 from .serializers import ReportListSerializer
 from users.permissions import IsAdmin, IsEmergency, IsPilgrim
@@ -322,7 +323,6 @@ class DirectionsAPIView(APIView):
     def post(self, request):
         origin = request.data.get('origin')
         destination = request.data.get('destination')
-        api_key = 'AIzaSyDkPh8vuUbdAuQCSf971rWxQ_uTxvi2pqc'
 
         if not origin or not destination:
             return Response(
@@ -330,20 +330,16 @@ class DirectionsAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        url = (
-            'https://maps.googleapis.com/maps/api/directions/json'
-            f'?origin={origin}&destination={destination}'
-            f'&key={api_key}&overview=full&mode=driving&language=ar'
-        )
-
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
+            data = get_directions(origin, destination)
+            return Response(data, content_type='application/json; charset=utf-8')
         except requests.RequestException as e:
             return Response(
                 {"error": "Failed to fetch directions", "details": str(e)},
                 status=status.HTTP_502_BAD_GATEWAY
             )
-
-        return Response(data, content_type='application/json; charset=utf-8')
+        except ValueError as ve:
+            return Response(
+                {"error": str(ve)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
