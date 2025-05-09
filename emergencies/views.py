@@ -210,6 +210,7 @@ class UpdateReportStatusView(APIView):
             "new_status": report.status
         }, status=status.HTTP_200_OK)
 
+
 class ListPilgrimsWithStatusView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin | IsEmergency]
 
@@ -286,6 +287,46 @@ class MyReportsView(APIView):
             })
 
         # ترتيب حسب الأحدث
+        combined.sort(key=lambda x: x["created_at"], reverse=True)
+
+        return Response(combined, status=status.HTTP_200_OK)
+
+
+class ReportsByPilgrimIdView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pilgrim_id):
+        try:
+            user = User.objects.get(id=pilgrim_id, account_type='pilgrim')
+        except User.DoesNotExist:
+            return Response({"error": "الحاج غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+        emergency_reports = EmergencyReport.objects.filter(pilgrim=user).select_related('report')
+        missing_reports = MissingReport.objects.filter(reported_by=user).select_related('report')
+
+        combined = []
+
+        for er in emergency_reports:
+            combined.append({
+                "id": er.report.id,
+                "type": "EMERGENCY",
+                "status": er.report.status,
+                "created_at": er.report.created_at,
+                "location": er.location,
+                "reason": er.report_reason,
+            })
+
+        for mr in missing_reports:
+            combined.append({
+                "id": mr.report.id,
+                "type": "MISSING",
+                "status": mr.report.status,
+                "created_at": mr.report.created_at,
+                "missing_name": mr.missing_name,
+                "last_seen_location": mr.last_seen_location,
+                "description": mr.description,
+            })
+
         combined.sort(key=lambda x: x["created_at"], reverse=True)
 
         return Response(combined, status=status.HTTP_200_OK)

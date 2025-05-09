@@ -408,7 +408,8 @@ class GetLinkedPilgrimView(APIView):
 
 class InactiveEmergencyProfilesView(ListAPIView):
     permission_classes = [IsAuthenticated, IsAdmin]
-    serializer_class = UserSerializer
+    serializer_class = EmergencyProfileSerializer
 
     def get_queryset(self):
-        return User.objects.filter(account_type='emergency', is_active=False)
+        return EmergencyProfile.objects.filter(user__account_type='emergency', is_active=False)
+

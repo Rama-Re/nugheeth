@@ -9,7 +9,7 @@ from .views import (
     ListPilgrimsWithStatusView,
     SendMessageNotificationView,
     MyReportsView,
-    DirectionsAPIView,
+    DirectionsAPIView, ReportsByPilgrimIdView,
 )
 
 urlpatterns = [
@@ -23,6 +23,7 @@ urlpatterns = [
 
     path('report/edit-status/', UpdateReportStatusView.as_view(), name='update-report-status'),
     path('reports/pilgrim-report/', MyReportsView.as_view(), name='get-pilgrim-report'),
+    path('reports/by-pilgrim/<int:pilgrim_id>/', ReportsByPilgrimIdView.as_view(), name='reports-by-pilgrim'),
     path('notify-user/', SendMessageNotificationView.as_view(), name='notify-user'),
 
     path('pilgrims/status/', ListPilgrimsWithStatusView.as_view(), name='pilgrims-status'),

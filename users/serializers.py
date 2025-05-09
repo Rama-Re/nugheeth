@@ -40,13 +40,17 @@ class PilgrimProfileSerializer(serializers.ModelSerializer):
 
 class EmergencyProfileSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
+    full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = EmergencyProfile
-        fields = ['id', 'user', 'user_email', 'is_active']
+        fields = ['id', 'user', 'user_email', 'full_name', 'is_active']
         extra_kwargs = {
             'user': {'read_only': True}
         }
+
+    def get_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip()
 
 
 class FamilyProfileSerializer(serializers.ModelSerializer):
