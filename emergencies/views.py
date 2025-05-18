@@ -164,6 +164,7 @@ class ReportDetailView(APIView):
                 'pilgrim': {
                     'id': er.pilgrim.id,
                     'name': er.pilgrim.get_full_name(),
+                    'id_number': er.pilgrim.pilgrim_profile.id_or_pass_number
                 }
             })
         elif report.report_type == 'MISSING' and hasattr(report, 'missing_details'):
@@ -178,7 +179,8 @@ class ReportDetailView(APIView):
                 'photo_url': mr.photo.url if mr.photo else None,
                 'reported_by': {
                     'id': mr.reported_by.id if mr.reported_by else None,
-                    'name': mr.reported_by.get_full_name() if mr.reported_by else None
+                    'name': mr.reported_by.get_full_name() if mr.reported_by else None,
+                    'id_number': mr.reported_by.pilgrim_profile.id_or_pass_number
                 }
             })
 
