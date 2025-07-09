@@ -27,15 +27,38 @@
 
 ---
 
-## 🛠️ Tech Stack
+## 🌦️ Weather Alerts (Auto Notifications)
 
-| Component      | Technology             |
-|----------------|-------------------------|
-| Backend        | Django, Django REST Framework |
-| Auth           | Email-based + verification code |
-| Notifications  | Firebase (FCM)          |
-| DB             | Mysql    |
-| Scheduling     |  |
+The system includes a background scheduler that checks the weather every 60 minutes using the **Google Weather API**, and sends FCM notifications to all **pilgrim users**.
+
+### 🔄 How It Works:
+
+- Coordinates: Medina, Saudi Arabia (24.470901°N, 39.612236°E)
+- API Used: `https://weather.googleapis.com/v1/currentConditions:lookup`
+- Weather data includes:
+  - Current weather condition (e.g., rain, clear, dust)
+  - Temperature in Celsius
+- FCM notification is sent to all pilgrims who have a valid `fcm_token`.
+
+### 🛠️ Implementation Highlights:
+
+- Uses `apscheduler.schedulers.background.BackgroundScheduler` to run every hour.
+- Triggers `fetch_weather_and_notify()` from `global_services.googleMap.forecastApi`.
+- Integrated inside Django's `AppConfig.ready()` method for automatic startup.
 
 ---
+
+## 🛠️ Tech Stack
+
+| Component         | Technology                            |
+|------------------|----------------------------------------|
+| Backend          | Django, Django REST Framework          |
+| Auth             | Email-based + verification code        |
+| Notifications    | Firebase Cloud Messaging (FCM)         |
+| Weather Alerts   | Google Weather API                     |
+| Scheduling       | APScheduler (hourly weather jobs)      |
+| DB               | Mysql                   |
+
+---
+
 
